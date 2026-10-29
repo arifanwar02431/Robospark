@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertCircle, Check, Cloud, Download, Loader2, Settings2, Users } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { Button, Card, EmptyState, buttonClass, cn } from "@/components/ui";
@@ -23,6 +24,7 @@ export function GradesGrid({
   notes: initialNotes,
   exportHref,
   exportAllHref,
+  loadedAt,
 }: {
   term: Term;
   className: string;
@@ -32,8 +34,22 @@ export function GradesGrid({
   notes: Record<number, string>;
   exportHref: string;
   exportAllHref: string;
+  loadedAt: number;
 }) {
   const toast = useToast();
+  const router = useRouter();
+  const savedKey = `nilai-tersimpan:${term.id}:${className}`;
+
+  // Tombol "kembali" di browser bisa menampilkan salinan halaman lama dari cache.
+  // Jika ada simpanan yang lebih baru dari salinan itu, muat ulang datanya.
+  useEffect(() => {
+    try {
+      const last = Number(sessionStorage.getItem(savedKey) ?? 0);
+      if (last > loadedAt) router.refresh();
+    } catch {
+      /* sessionStorage tidak tersedia */
+    }
+  }, [savedKey, loadedAt, router]);
   const [vals, setVals] = useState<Vals>(() => {
     const v: Vals = {};
     for (const s of students) {
@@ -72,6 +88,11 @@ export function GradesGrid({
     saving.current = false;
     if (res.ok) {
       setStatus({ kind: "saved", at: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) });
+      try {
+        if (res.data?.savedAt) sessionStorage.setItem(savedKey, String(res.data.savedAt));
+      } catch {
+        /* abaikan */
+      }
     } else {
       // Kembalikan ke antrean (kecuali sudah ada perubahan yang lebih baru).
       for (const s of scoreBatch) if (!pendingScores.current.has(cellKey(s.studentId, s.componentId))) pendingScores.current.set(cellKey(s.studentId, s.componentId), s);
@@ -81,7 +102,7 @@ export function GradesGrid({
       return;
     }
     if (pendingScores.current.size || pendingNotes.current.size) void flush();
-  }, [term.id, className, toast]);
+  }, [term.id, className, toast, savedKey]);
 
   const schedule = useCallback(() => {
     setStatus({ kind: "pending" });

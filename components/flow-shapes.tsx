@@ -8,6 +8,7 @@ export const SHAPE_TONE: Record<TopicShape, { fill: string; stroke: string; soft
   decision: { fill: "#ffe9d2", stroke: "#f99a2e", soft: "bg-c2-50", text: "text-c2-900" },
   loop: { fill: "#d9f3e5", stroke: "#3db57a", soft: "bg-c4-50", text: "text-c4-900" },
   terminal: { fill: "#ffe7d4", stroke: "#ec6416", soft: "bg-brand-50", text: "text-brand-800" },
+  document: { fill: "#d6f1ef", stroke: "#2fb0a6", soft: "bg-c6-50", text: "text-c6-900" },
 };
 
 /** Ikon bentuk flowchart kecil (viewBox 64×48). */
@@ -20,6 +21,12 @@ export function ShapeIcon({ shape, className }: { shape: TopicShape; className?:
       {shape === "io" && <path d="M16 10 H58 L48 38 H6 Z" {...common} />}
       {shape === "decision" && <path d="M32 4 L60 24 L32 44 L4 24 Z" {...common} />}
       {shape === "terminal" && <rect x="4" y="11" width="56" height="26" rx="13" {...common} />}
+      {shape === "document" && (
+        <>
+          <path d="M8 6 H56 V36 C46 30 38 46 27 40 C19 36 14 41 8 40 Z" {...common} />
+          <path d="M16 15 H48 M16 23 H40" stroke={t.stroke} strokeWidth="2.5" strokeLinecap="round" />
+        </>
+      )}
       {shape === "loop" && (
         <>
           <rect x="14" y="14" width="44" height="24" rx="4" {...common} />

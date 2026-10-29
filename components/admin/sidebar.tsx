@@ -24,7 +24,7 @@ const GROUPS = [
       { href: "/admin/siswa", label: "Siswa", icon: Users },
     ],
   },
-  { title: "Pengaturan", items: [{ href: "/admin/pengaturan", label: "Telegram", icon: Send }] },
+  { title: "Pengaturan", items: [{ href: "/admin/pengaturan", label: "Telegram & server", icon: Send }] },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {

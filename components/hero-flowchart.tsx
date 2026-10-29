@@ -53,8 +53,8 @@ function Label({ y, title, sub, dark }: { y: number; title: string; sub: string;
 
 export function HeroFlowchart() {
   const flow = bySlug("flowchart-kelas-4");
-  const vari = bySlug("variabel");
-  const cab = bySlug("percabangan");
+  const vari = bySlug("variabel-kelas-4");
+  const cab = bySlug("percabangan-kelas-4");
   const loop = bySlug("perulangan-kelas-6");
   const sum = bySlug("sumatif-flowchart-kelas-6");
   const t = SHAPE_TONE;
