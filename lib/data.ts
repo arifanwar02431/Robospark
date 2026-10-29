@@ -89,6 +89,33 @@ export async function deleteEvent(id: number): Promise<boolean> {
   return rows.length > 0;
 }
 
+// ---------- Dashboard: semua data dalam SATU kali bolak-balik ke database ----------
+export type DashboardData = {
+  lessons: Lesson[];
+  events: EventItem[]; // dari hari ini s.d. 366 hari ke depan (cukup untuk pengingat H-365)
+  sent: { kind: string; ref_id: number; target_date: string; days_before: number }[];
+  sent7: number;
+};
+
+export async function getDashboardData(today: string, until: string): Promise<DashboardData> {
+  const [row] = await query<DashboardData>(
+    `SELECT
+       COALESCE((SELECT json_agg(l ORDER BY l.day_of_week, l.start_time, l.subject)
+                 FROM (SELECT ${LESSON_COLUMNS} FROM lessons WHERE active) l), '[]') AS lessons,
+       COALESCE((SELECT json_agg(e ORDER BY e.event_date, e.start_time NULLS FIRST, e.title)
+                 FROM (SELECT id, title, to_char(event_date, 'YYYY-MM-DD') AS event_date,
+                              to_char(start_time, 'HH24:MI') AS start_time, to_char(end_time, 'HH24:MI') AS end_time,
+                              location, description, reminder_days
+                       FROM events WHERE event_date BETWEEN $1 AND $2) e), '[]') AS events,
+       COALESCE((SELECT json_agg(r)
+                 FROM (SELECT kind, ref_id, to_char(target_date, 'YYYY-MM-DD') AS target_date, days_before
+                       FROM reminder_log WHERE target_date >= $1) r), '[]') AS sent,
+       (SELECT count(*)::int FROM reminder_log WHERE sent_at > now() - interval '7 days') AS sent7`,
+    [today, until],
+  );
+  return row;
+}
+
 // ---------- Ringkasan & riwayat ----------
 export async function getStats(today: string) {
   const [row] = await query<{ lessons: number; upcoming: number; sent7: number }>(

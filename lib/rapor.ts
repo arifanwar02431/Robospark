@@ -48,22 +48,6 @@ export async function ensureTerm(schoolYear: string, semester: 1 | 2): Promise<{
   });
 }
 
-export async function getTerm(termId: number): Promise<Term | null> {
-  const rows = await query<Term>(`SELECT ${TERM_COLS} FROM terms WHERE id = $1`, [termId]);
-  return rows[0] ?? null;
-}
-
-export async function listComponents(termId: number): Promise<GradeComponent[]> {
-  return query<GradeComponent>(`SELECT ${COMP_COLS} FROM grade_components WHERE term_id = $1 ORDER BY position, id`, [termId]);
-}
-
-export async function knownSchoolYears(): Promise<string[]> {
-  const rows = await query<{ y: string }>(
-    `SELECT school_year AS y FROM terms UNION SELECT school_year FROM students ORDER BY 1 DESC`,
-  );
-  return rows.map((r) => r.y);
-}
-
 export type ComponentInput = { id: number | null; name: string; weight: number };
 
 export async function saveComponents(termId: number, components: ComponentInput[], kktp: number): Promise<void> {
@@ -88,23 +72,6 @@ export async function saveComponents(termId: number, components: ComponentInput[
 
 // ---------- Siswa ----------
 const STUDENT_COLS = "id, school_year, class_name, nis, name";
-
-export function listStudents(schoolYear: string, className: string): Promise<Student[]> {
-  return query<Student>(
-    `SELECT ${STUDENT_COLS} FROM students WHERE school_year = $1 AND class_name = $2 ORDER BY lower(name), id`,
-    [schoolYear, className],
-  );
-}
-
-export async function classCounts(schoolYear: string): Promise<Record<string, number>> {
-  const rows = await query<{ class_name: string; n: number }>(
-    `SELECT class_name, count(*)::int AS n FROM students WHERE school_year = $1 GROUP BY class_name`,
-    [schoolYear],
-  );
-  const out: Record<string, number> = Object.fromEntries(CLASSES.map((c) => [c, 0]));
-  for (const r of rows) out[r.class_name] = r.n;
-  return out;
-}
 
 export async function addStudents(
   schoolYear: string,
@@ -166,88 +133,168 @@ export type GradeSheet = {
   notes: Record<number, string>;
 };
 
-export async function getGradeSheet(term: Term, className: string, components: GradeComponent[]): Promise<GradeSheet> {
-  const students = await listStudents(term.school_year, className);
-  const ids = students.map((s) => s.id);
-  const scores: GradeSheet["scores"] = {};
-  const notes: GradeSheet["notes"] = {};
-  if (ids.length && components.length) {
-    const rows = await query<{ student_id: number; component_id: number; score: number }>(
-      `SELECT student_id, component_id, score::float8 AS score FROM scores
-       WHERE student_id = ANY($1::int[]) AND component_id = ANY($2::int[])`,
-      [ids, components.map((c) => c.id)],
-    );
-    for (const r of rows) (scores[r.student_id] ??= {})[r.component_id] = r.score;
-  }
-  if (ids.length) {
-    const rows = await query<{ student_id: number; description: string }>(
-      `SELECT student_id, description FROM report_notes WHERE term_id = $1 AND student_id = ANY($2::int[])`,
-      [term.id, ids],
-    );
-    for (const r of rows) notes[r.student_id] = r.description;
-  }
-  return { students, scores, notes };
-}
-
 export type ScoreChange = { studentId: number; componentId: number; score: number | null };
 export type NoteChange = { studentId: number; description: string };
 
-export async function saveGrades(term: Term, className: string, scores: ScoreChange[], notes: NoteChange[]): Promise<void> {
-  await transaction(async (q) => {
-    // Pastikan semua siswa & komponen memang milik kelas dan semester ini.
-    const studentIds = [...new Set([...scores.map((s) => s.studentId), ...notes.map((n) => n.studentId)])];
-    if (studentIds.length) {
-      const ok = await q<{ n: number }>(
-        `SELECT count(*)::int AS n FROM students WHERE id = ANY($1::int[]) AND school_year = $2 AND class_name = $3`,
-        [studentIds, term.school_year, className],
-      );
-      if (ok[0].n !== studentIds.length) throw new Error("Data siswa berubah. Muat ulang halaman lalu coba lagi.");
-    }
-    const compIds = [...new Set(scores.map((s) => s.componentId))];
-    if (compIds.length) {
-      const ok = await q<{ n: number }>(
-        `SELECT count(*)::int AS n FROM grade_components WHERE id = ANY($1::int[]) AND term_id = $2`,
-        [compIds, term.id],
-      );
-      if (ok[0].n !== compIds.length) throw new Error("Komponen nilai berubah. Muat ulang halaman lalu coba lagi.");
-    }
-
-    const upserts = scores.filter((s) => s.score !== null);
-    const removals = scores.filter((s) => s.score === null);
-    if (upserts.length) {
-      await q(
-        `INSERT INTO scores (student_id, component_id, score)
-         SELECT * FROM unnest($1::int[], $2::int[], $3::numeric[])
-         ON CONFLICT (student_id, component_id) DO UPDATE SET score = EXCLUDED.score, updated_at = now()`,
-        [upserts.map((s) => s.studentId), upserts.map((s) => s.componentId), upserts.map((s) => s.score)],
-      );
-    }
-    if (removals.length) {
-      await q(
-        `DELETE FROM scores s USING unnest($1::int[], $2::int[]) AS d(sid, cid)
-         WHERE s.student_id = d.sid AND s.component_id = d.cid`,
-        [removals.map((s) => s.studentId), removals.map((s) => s.componentId)],
-      );
-    }
-    if (notes.length) {
-      await q(
-        `INSERT INTO report_notes (student_id, term_id, description)
-         SELECT sid, $1, d FROM unnest($2::int[], $3::text[]) AS t(sid, d)
-         ON CONFLICT (student_id, term_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()`,
-        [term.id, notes.map((n) => n.studentId), notes.map((n) => n.description)],
-      );
-    }
-  });
+/**
+ * Simpan perubahan nilai dalam SATU pernyataan SQL (atomik, sekali bolak-balik ke database):
+ * validasi semester, siswa & komponen, lalu upsert/hapus nilai dan deskripsi.
+ * Jika validasi gagal, tidak ada yang tersimpan.
+ */
+export async function saveGrades(termId: number, className: string, scores: ScoreChange[], notes: NoteChange[]): Promise<void> {
+  const up = scores.filter((s) => s.score !== null);
+  const del = scores.filter((s) => s.score === null);
+  const studentIds = [...new Set([...scores.map((s) => s.studentId), ...notes.map((n) => n.studentId)])];
+  const compIds = [...new Set(scores.map((s) => s.componentId))];
+  const [row] = await query<{ ok: boolean }>(
+    `WITH t AS (SELECT id, school_year FROM terms WHERE id = $1),
+     ok AS (
+       SELECT EXISTS (SELECT 1 FROM t)
+          AND (SELECT count(*) FROM students WHERE id = ANY($2::int[]) AND class_name = $3
+                 AND school_year = (SELECT school_year FROM t)) = cardinality($2::int[])
+          AND (SELECT count(*) FROM grade_components WHERE id = ANY($4::int[]) AND term_id = $1) = cardinality($4::int[]) AS ok
+     ),
+     ups AS (
+       INSERT INTO scores (student_id, component_id, score)
+       SELECT * FROM unnest($5::int[], $6::int[], $7::numeric[]) WHERE (SELECT ok FROM ok)
+       ON CONFLICT (student_id, component_id) DO UPDATE SET score = EXCLUDED.score, updated_at = now()
+       RETURNING 1
+     ),
+     dels AS (
+       DELETE FROM scores s USING unnest($8::int[], $9::int[]) AS d(sid, cid)
+       WHERE (SELECT ok FROM ok) AND s.student_id = d.sid AND s.component_id = d.cid
+       RETURNING 1
+     ),
+     nts AS (
+       INSERT INTO report_notes (student_id, term_id, description)
+       SELECT sid, $1, d FROM unnest($10::int[], $11::text[]) AS x(sid, d) WHERE (SELECT ok FROM ok)
+       ON CONFLICT (student_id, term_id) DO UPDATE SET description = EXCLUDED.description, updated_at = now()
+       RETURNING 1
+     )
+     SELECT (SELECT ok FROM ok) AS ok`,
+    [
+      termId,
+      studentIds,
+      className,
+      compIds,
+      up.map((s) => s.studentId),
+      up.map((s) => s.componentId),
+      up.map((s) => s.score),
+      del.map((s) => s.studentId),
+      del.map((s) => s.componentId),
+      notes.map((n) => n.studentId),
+      notes.map((n) => n.description),
+    ],
+  );
+  if (!row?.ok) throw new Error("Data siswa atau komponen berubah. Muat ulang halaman lalu coba lagi.");
 }
 
-/** Jumlah siswa & nilai terisi per kelas untuk satu semester (untuk ringkasan). */
-export async function termProgress(term: Term, componentCount: number): Promise<Record<string, { students: number; complete: number }>> {
-  const rows = await query<{ class_name: string; students: number; complete: number }>(
-    `SELECT s.class_name, count(*)::int AS students,
-            count(*) FILTER (WHERE (SELECT count(*) FROM scores sc JOIN grade_components c ON c.id = sc.component_id
-                                     WHERE sc.student_id = s.id AND c.term_id = $2) >= $3 AND $3 > 0)::int AS complete
-     FROM students s WHERE s.school_year = $1 GROUP BY s.class_name`,
-    [term.school_year, term.id, componentCount],
+// ---------- Pemuatan halaman dalam SATU kali bolak-balik ke database ----------
+type ProgressRow = { class_name: string; students: number; complete: number };
+
+export type GradePage = {
+  term: Term;
+  components: GradeComponent[];
+  sheet: GradeSheet;
+  progress: Record<string, { students: number; complete: number }>;
+  years: string[];
+};
+
+async function loadGradePage(schoolYear: string, semester: 1 | 2, className: string) {
+  const [row] = await query<{
+    term: Term | null;
+    components: GradeComponent[];
+    students: Student[];
+    scores: { student_id: number; component_id: number; score: number }[];
+    notes: { student_id: number; description: string }[];
+    progress: ProgressRow[];
+    years: string[];
+  }>(
+    `WITH t AS (SELECT ${TERM_COLS} FROM terms WHERE school_year = $1 AND semester = $2),
+     comps AS (SELECT ${COMP_COLS} FROM grade_components WHERE term_id = (SELECT id FROM t)),
+     st AS (SELECT ${STUDENT_COLS} FROM students WHERE school_year = $1 AND class_name = $3),
+     prog AS (
+       SELECT s.class_name, count(*)::int AS students,
+              count(*) FILTER (WHERE (SELECT count(*) FROM comps) > 0 AND
+                (SELECT count(*) FROM scores x WHERE x.student_id = s.id AND x.component_id IN (SELECT id FROM comps))
+                  >= (SELECT count(*) FROM comps))::int AS complete
+       FROM students s WHERE s.school_year = $1 GROUP BY s.class_name)
+     SELECT
+       (SELECT row_to_json(t) FROM t) AS term,
+       COALESCE((SELECT json_agg(c ORDER BY c.position, c.id) FROM comps c), '[]') AS components,
+       COALESCE((SELECT json_agg(x ORDER BY lower(x.name), x.id) FROM st x), '[]') AS students,
+       COALESCE((SELECT json_agg(json_build_object('student_id', sc.student_id, 'component_id', sc.component_id, 'score', sc.score::float8))
+                 FROM scores sc WHERE sc.student_id IN (SELECT id FROM st) AND sc.component_id IN (SELECT id FROM comps)), '[]') AS scores,
+       COALESCE((SELECT json_agg(json_build_object('student_id', n.student_id, 'description', n.description))
+                 FROM report_notes n WHERE n.term_id = (SELECT id FROM t) AND n.student_id IN (SELECT id FROM st)), '[]') AS notes,
+       COALESCE((SELECT json_agg(p) FROM prog p), '[]') AS progress,
+       COALESCE((SELECT json_agg(y.school_year ORDER BY y.school_year DESC)
+                 FROM (SELECT school_year FROM terms UNION SELECT school_year FROM students) y), '[]') AS years`,
+    [schoolYear, semester, className],
   );
-  return Object.fromEntries(rows.map((r) => [r.class_name, { students: r.students, complete: r.complete }]));
+  return row;
+}
+
+export async function getGradePage(schoolYear: string, semester: 1 | 2, className: string): Promise<GradePage> {
+  let row = await loadGradePage(schoolYear, semester, className);
+  if (!row.term) {
+    await ensureTerm(schoolYear, semester); // semester baru: buat sekali, lalu muat ulang
+    row = await loadGradePage(schoolYear, semester, className);
+  }
+  const scores: GradeSheet["scores"] = {};
+  for (const r of row.scores) (scores[r.student_id] ??= {})[r.component_id] = r.score;
+  const notes: GradeSheet["notes"] = {};
+  for (const r of row.notes) notes[r.student_id] = r.description;
+  return {
+    term: row.term as Term,
+    components: row.components,
+    sheet: { students: row.students, scores, notes },
+    progress: Object.fromEntries(row.progress.map((p) => [p.class_name, { students: p.students, complete: p.complete }])),
+    years: row.years,
+  };
+}
+
+export async function getStudentsPage(schoolYear: string, className: string) {
+  const [row] = await query<{ students: Student[]; counts: { class_name: string; n: number }[]; years: string[] }>(
+    `SELECT
+       COALESCE((SELECT json_agg(x ORDER BY lower(x.name), x.id)
+                 FROM (SELECT ${STUDENT_COLS} FROM students WHERE school_year = $1 AND class_name = $2) x), '[]') AS students,
+       COALESCE((SELECT json_agg(c) FROM (SELECT class_name, count(*)::int AS n FROM students WHERE school_year = $1 GROUP BY class_name) c), '[]') AS counts,
+       COALESCE((SELECT json_agg(y.school_year ORDER BY y.school_year DESC)
+                 FROM (SELECT school_year FROM terms UNION SELECT school_year FROM students) y), '[]') AS years`,
+    [schoolYear, className],
+  );
+  const counts: Record<string, number> = Object.fromEntries(CLASSES.map((c) => [c, 0]));
+  for (const c of row.counts) counts[c.class_name] = c.n;
+  return { students: row.students, counts, years: row.years };
+}
+
+/** Semua data untuk ekspor Excel satu semester (semua kelas) dalam satu query. */
+export async function getExportData(termId: number) {
+  const [row] = await query<{
+    term: Term | null;
+    components: GradeComponent[];
+    students: Student[];
+    scores: { student_id: number; component_id: number; score: number }[];
+    notes: { student_id: number; description: string }[];
+  }>(
+    `WITH t AS (SELECT ${TERM_COLS} FROM terms WHERE id = $1),
+     comps AS (SELECT ${COMP_COLS} FROM grade_components WHERE term_id = $1),
+     st AS (SELECT ${STUDENT_COLS} FROM students WHERE school_year = (SELECT school_year FROM t))
+     SELECT
+       (SELECT row_to_json(t) FROM t) AS term,
+       COALESCE((SELECT json_agg(c ORDER BY c.position, c.id) FROM comps c), '[]') AS components,
+       COALESCE((SELECT json_agg(x ORDER BY x.class_name, lower(x.name), x.id) FROM st x), '[]') AS students,
+       COALESCE((SELECT json_agg(json_build_object('student_id', sc.student_id, 'component_id', sc.component_id, 'score', sc.score::float8))
+                 FROM scores sc WHERE sc.component_id IN (SELECT id FROM comps)), '[]') AS scores,
+       COALESCE((SELECT json_agg(json_build_object('student_id', n.student_id, 'description', n.description))
+                 FROM report_notes n WHERE n.term_id = $1), '[]') AS notes`,
+    [termId],
+  );
+  if (!row.term) return null;
+  const scores: GradeSheet["scores"] = {};
+  for (const r of row.scores) (scores[r.student_id] ??= {})[r.component_id] = r.score;
+  const notes: GradeSheet["notes"] = {};
+  for (const r of row.notes) notes[r.student_id] = r.description;
+  return { term: row.term, components: row.components, students: row.students, scores, notes };
 }

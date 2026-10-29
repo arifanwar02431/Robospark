@@ -24,15 +24,11 @@ type Due = {
 
 const key = (k: string, id: number, date: string, d: number) => `${k}:${id}:${date}:${d}`;
 
-/** Hitung semua pengingat yang jatuh pada tanggal `date` (YYYY-MM-DD, WIB). */
-export async function computeDueReminders(date: string): Promise<Due[]> {
-  const [lessons, events] = await Promise.all([
-    listLessons(true),
-    listEventsBetween(date, addDays(date, 366)),
-  ]);
+/** Hitung pengingat yang jatuh pada tanggal `date` dari data yang sudah dimuat (tanpa query). */
+export function dueFrom(date: string, lessons: Lesson[], events: EventItem[]): Due[] {
   const due: Due[] = [];
-
   for (const lesson of lessons) {
+    if (!lesson.active) continue;
     for (const d of lesson.reminder_days) {
       const target = addDays(date, d);
       if (isoDayOfWeek(target) === lesson.day_of_week) {
@@ -42,29 +38,26 @@ export async function computeDueReminders(date: string): Promise<Due[]> {
   }
   for (const event of events) {
     const distance = diffDays(event.event_date, date);
-    if (event.reminder_days.includes(distance)) {
+    if (distance >= 0 && event.reminder_days.includes(distance)) {
       due.push({ kind: "event", refId: event.id, targetDate: event.event_date, daysBefore: distance, event });
     }
   }
-
   const time = (x: Due) => x.lesson?.start_time ?? x.event?.start_time ?? "00:00";
   return due.sort((a, b) => a.targetDate.localeCompare(b.targetDate) || time(a).localeCompare(time(b)));
 }
 
-async function sentKeys(dates: string[]): Promise<Set<string>> {
-  if (dates.length === 0) return new Set();
-  const rows = await query<{ kind: string; ref_id: number; target_date: string; days_before: number }>(
-    `SELECT kind, ref_id, target_date, days_before FROM reminder_log WHERE target_date = ANY($1::date[])`,
-    [[...new Set(dates)]],
-  );
-  return new Set(rows.map((r) => key(r.kind, r.ref_id, r.target_date, r.days_before)));
+/** Hitung semua pengingat yang jatuh pada tanggal `date` (YYYY-MM-DD, WIB). */
+export async function computeDueReminders(date: string): Promise<Due[]> {
+  const [lessons, events] = await Promise.all([listLessons(true), listEventsBetween(date, addDays(date, 366))]);
+  return dueFrom(date, lessons, events);
 }
 
-/** Pratinjau pengingat untuk suatu tanggal, beserta status sudah terkirim atau belum. */
-export async function previewReminders(date: string): Promise<ReminderPreview[]> {
-  const due = await computeDueReminders(date);
-  const sent = await sentKeys(due.map((d) => d.targetDate));
-  return due.map((d) => ({
+export type SentRow = { kind: string; ref_id: number; target_date: string; days_before: number };
+export const sentKey = (r: SentRow) => key(r.kind, r.ref_id, r.target_date, r.days_before);
+
+/** Pratinjau pengingat untuk suatu tanggal dari data yang sudah dimuat. */
+export function previewFrom(date: string, lessons: Lesson[], events: EventItem[], sent: Set<string>): ReminderPreview[] {
+  return dueFrom(date, lessons, events).map((d) => ({
     kind: d.kind,
     refId: d.refId,
     title: d.lesson?.subject ?? d.event?.title ?? "",
