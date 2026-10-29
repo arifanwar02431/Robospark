@@ -1,30 +1,25 @@
 import type { Metadata } from "next";
-import { BookOpen } from "lucide-react";
-import { SiteFooter, SiteHeader } from "@/components/site-chrome";
-import { Card, EmptyState } from "@/components/ui";
+import { MateriList } from "@/components/materi-list";
+import { PageIntro, PublicShell } from "@/components/site-chrome";
+import { MATERI } from "@/content/materi";
 
-export const metadata: Metadata = { title: "Materi" };
+export const metadata: Metadata = {
+  title: "Materi",
+  description: "Materi interaktif flowchart, variabel, percabangan, dan perulangan untuk kelas 4 dan 6.",
+};
 
 export default function MateriPage() {
   return (
-    <div className="bg-sunrise flex min-h-dvh flex-col">
-      <SiteHeader active="/materi" />
-      <main className="mx-auto w-full max-w-[1200px] flex-1 px-5 pt-10 pb-20 sm:px-8 sm:pt-16">
-        <div className="max-w-2xl animate-rise">
-          <h1 className="text-[40px] leading-[1.05] font-extrabold tracking-[-0.032em] text-gray-900 sm:text-[52px]">Materi</h1>
-          <p className="mt-5 text-[17px] leading-relaxed text-gray-600">
-            Catatan dan bahan belajar yang saya kumpulkan, disusun per topik. Halaman ini sedang disiapkan.
-          </p>
+    <PublicShell active="/materi">
+      <div className="mx-auto max-w-[1200px] px-5 pt-8 pb-24 sm:px-8 sm:pt-14">
+        <PageIntro title="Materi">
+          Materi interaktif yang sudah dipelajari di kelas. Pilih kelasmu, lalu buka materinya. Semua bisa dikerjakan langsung di browser,
+          dari laptop maupun HP.
+        </PageIntro>
+        <div className="mt-10">
+          <MateriList items={MATERI} />
         </div>
-        <Card className="mt-12 bg-white/80">
-          <EmptyState
-            icon={BookOpen}
-            title="Materi pertama segera hadir"
-            description="Kembali lagi nanti untuk membaca catatan dan rangkuman pelajaran."
-          />
-        </Card>
-      </main>
-      <SiteFooter />
-    </div>
+      </div>
+    </PublicShell>
   );
 }

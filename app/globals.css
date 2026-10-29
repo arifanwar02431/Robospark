@@ -180,3 +180,38 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-gray-300) transparent;
 }
+
+/* ===== Flowchart beranda ===== */
+.flow-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: flow-draw 450ms ease-out forwards;
+}
+.flow-node-inner {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: flow-pop 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.flow-node {
+  cursor: pointer;
+  outline: none;
+}
+.flow-node .flow-shape {
+  transition: filter 160ms ease, stroke-width 160ms ease;
+}
+.flow-node:hover .flow-shape,
+.flow-node:focus-visible .flow-shape {
+  filter: drop-shadow(0 6px 14px rgba(120, 60, 20, 0.22));
+  stroke-width: 3.5;
+}
+.flow-node:focus-visible .flow-shape {
+  stroke: var(--color-brand-600);
+}
+@keyframes flow-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes flow-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}

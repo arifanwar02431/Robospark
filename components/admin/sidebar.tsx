@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BookOpen, CalendarDays, ExternalLink, LayoutGrid, LogOut, Menu, Send, X } from "lucide-react";
+import { BookOpen, CalendarDays, ClipboardList, ExternalLink, LayoutGrid, LogOut, Menu, Send, Users, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { cn } from "@/components/ui";
 import { logoutAction } from "@/app/login/actions";
@@ -15,6 +15,13 @@ const GROUPS = [
     items: [
       { href: "/admin/pelajaran", label: "Pelajaran", icon: BookOpen },
       { href: "/admin/kegiatan", label: "Kegiatan", icon: CalendarDays },
+    ],
+  },
+  {
+    title: "Rapor",
+    items: [
+      { href: "/admin/nilai", label: "Nilai", icon: ClipboardList },
+      { href: "/admin/siswa", label: "Siswa", icon: Users },
     ],
   },
   { title: "Pengaturan", items: [{ href: "/admin/pengaturan", label: "Telegram", icon: Send }] },

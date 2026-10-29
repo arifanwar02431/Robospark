@@ -22,7 +22,7 @@ function safeNext(next: unknown): string {
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const configError = authConfigError();
   if (configError) return { error: configError };
-  if (!isDbConfigured()) return { error: "Database belum terhubung (DATABASE_URL belum diatur)." };
+  if (!isDbConfigured()) return { error: "Database belum terhubung. Isi DATABASE_URL di Vercel → Settings → Environment Variables, lalu redeploy." };
 
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
@@ -41,7 +41,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     await clearFailedLogins(ip);
   } catch (err) {
     console.error("Login gagal:", err);
-    return { error: "Tidak dapat terhubung ke database. Periksa DATABASE_URL." };
+    return { error: "Tidak dapat terhubung ke database. Periksa nilai DATABASE_URL di Vercel (harus diawali postgresql://)." };
   }
 
   const store = await cookies();

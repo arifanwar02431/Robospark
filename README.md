@@ -1,8 +1,17 @@
-# Website Pribadi — Admin Jadwal + Pengingat Telegram
+# Portal Belajar — Materi, Robot, Project + Admin Jadwal & Rapor
 
-Website pribadi dengan halaman publik (**Beranda**, **Materi**) dan **panel Admin** yang hanya bisa diakses oleh Anda.
+Portal pribadi dengan halaman publik (**Beranda**, **Materi**, **Robot**, **Project**) dan **panel Admin** yang hanya bisa diakses oleh Anda.
+
+**Halaman publik**
+
+- **Beranda** — alur belajar digambar sebagai flowchart (Flowchart → Variabel → Percabangan → Perulangan → Sumatif); setiap bentuk membuka materinya.
+- **Materi** — kartu materi interaktif dengan filter Kelas 4 / Kelas 6.
+- **Robot** & **Project** — galeri dengan halaman detail (foto, deskripsi, video YouTube, komponen, tautan).
 
 **Fitur admin**
+
+- **Nilai rapor** — kelas 4A–4I dan 6A–6I, per tahun ajaran & semester. Komponen penilaian berbobot (bawaan: Tugas 20, Praktik 30, UTS 20, UAS 30) yang bisa diubah, nilai akhir dihitung otomatis, deskripsi capaian, KKTP, ringkasan kelas, tempel nilai langsung dari Excel, tersimpan otomatis, dan unduh ke Excel (per kelas atau semua kelas sekaligus).
+- **Data siswa** — tempel daftar NIS + nama dari Excel per kelas, edit, pindah kelas, hapus. Daftar siswa berlaku per tahun ajaran.
 
 - **Jadwal Pelajaran** (mingguan) — tambah, edit, hapus, aktif/nonaktifkan, cari & filter per hari.
 - **Jadwal Kegiatan** (tanggal tertentu) — tambah, edit, hapus, tab Mendatang / Sudah lewat.
@@ -30,7 +39,7 @@ git push -u origin main
 ## 2. Deploy di Vercel
 
 1. Buka [vercel.com/new](https://vercel.com/new) → **Import** repository tadi → klik **Deploy**. Website publik langsung tampil; admin baru bisa dipakai setelah langkah 2–4.
-2. **Database:** di project Vercel → tab **Storage** → **Create Database** → pilih **Neon (Postgres)** → **Connect** ke project ini. `DATABASE_URL` otomatis terisi. Tabel dibuat otomatis saat aplikasi pertama kali dipakai.
+2. **Database:** di project Vercel → tab **Storage** → **Create Database** → pilih **Neon (Postgres)** → **Connect** ke project ini. Variabel alamat database otomatis terisi (`DATABASE_URL`, atau `STORAGE_URL` jika memakai prefix bawaan; keduanya dikenali). Jika tidak muncul, salin alamat database dari halaman Storage dan tambahkan manual sebagai `DATABASE_URL`. Tabel dibuat otomatis saat aplikasi pertama kali dipakai.
 3. **Environment Variables:** **Settings → Environment Variables**, tambahkan:
 
 | Nama | Isi |
@@ -87,20 +96,42 @@ Menjalankan pengingat secara manual (lokal):
 curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/reminder
 ```
 
+## Mengubah isi Materi, Robot, dan Project
+
+Isi halaman publik ada di folder `content/`:
+
+- `content/materi.ts` — daftar materi (judul, topik, kelas, link, ringkasan, aktivitas).
+- `content/robot.ts` — galeri robot. Foto taruh di `public/robot/`, lalu tulis `image: "/robot/nama-file.jpg"`.
+- `content/project.ts` — daftar project. Gambar taruh di `public/project/`.
+
+Setiap file berisi contoh yang tinggal disalin. Setelah diubah, commit & push ke GitHub; Vercel deploy otomatis.
+
+## Rapor: cara pakai singkat
+
+1. **Admin → Siswa**: pilih tahun ajaran dan kelas, klik **Tambah siswa**, tempel kolom NIS + Nama dari Excel (kolom No boleh ikut), lalu **Simpan**.
+2. **Admin → Nilai**: pilih semester dan kelas. Ketik nilai (Enter = turun satu baris) atau salin satu kolom/blok nilai dari Excel lalu tempel di sel pertama. Semua perubahan tersimpan otomatis.
+3. **Komponen & bobot**: ubah nama/bobot komponen dan KKTP. Berlaku untuk semua kelas di semester itu. Semester baru otomatis menyalin komponen semester sebelumnya.
+4. **Excel 4A / Excel semua kelas**: unduh nilai lengkap dengan nilai akhir, keterangan Tuntas/Belum tuntas, dan deskripsi capaian.
+
+Data nilai dan nama siswa hanya bisa dilihat setelah login admin.
+
 ## Struktur folder
 
 ```
 app/
   page.tsx                 Beranda (publik)
-  materi/                  Halaman Materi (publik, masih placeholder)
+  materi/, robot/, project/  Halaman publik
   login/                   Halaman & aksi login
-  admin/                   Dashboard, pelajaran, kegiatan, pengaturan + server actions
+  admin/                   Dashboard, pelajaran, kegiatan, nilai, siswa, Telegram + server actions
+  admin/nilai/export/      Unduh nilai ke Excel
+content/                   Isi Materi, Robot, Project (ubah di sini)
   api/cron/reminder/       Endpoint yang dipanggil Vercel Cron
 components/                Komponen UI (tombol, kartu jadwal, kalender, modal)
 lib/
   db.ts, schema.ts         Koneksi Postgres & skema tabel (dibuat otomatis)
   auth.ts, session.ts      Login & sesi admin
   reminders.ts             Logika pengingat H-n
+  rapor.ts, rapor-shared.ts  Data siswa, komponen, nilai & perhitungan nilai akhir
   telegram.ts              Kirim pesan Telegram
   site.ts                  Nama & tagline website (ubah di sini)
 proxy.ts                   Proteksi /admin (Next.js 16)

@@ -41,6 +41,55 @@ CREATE TABLE IF NOT EXISTS reminder_log (
   UNIQUE (kind, ref_id, target_date, days_before)
 );
 
+-- ===== Rapor =====
+-- Daftar siswa per tahun ajaran (kelas 4A–4I dan 6A–6I).
+CREATE TABLE IF NOT EXISTS students (
+  id          SERIAL PRIMARY KEY,
+  school_year TEXT        NOT NULL,             -- contoh: '2026/2027'
+  class_name  TEXT        NOT NULL,             -- contoh: '4A'
+  nis         TEXT        NOT NULL DEFAULT '',
+  name        TEXT        NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS students_class_idx ON students (school_year, class_name, name);
+
+-- Semester (tahun ajaran + semester 1/2) beserta KKTP.
+CREATE TABLE IF NOT EXISTS terms (
+  id          SERIAL PRIMARY KEY,
+  school_year TEXT          NOT NULL,
+  semester    SMALLINT      NOT NULL CHECK (semester IN (1, 2)),
+  kktp        NUMERIC(5,2)  NOT NULL DEFAULT 75,
+  UNIQUE (school_year, semester)
+);
+
+-- Komponen penilaian per semester (Tugas, Praktik, UTS, UAS, ...) beserta bobotnya.
+CREATE TABLE IF NOT EXISTS grade_components (
+  id        SERIAL PRIMARY KEY,
+  term_id   INT          NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
+  name      TEXT         NOT NULL,
+  weight    NUMERIC(6,2) NOT NULL CHECK (weight >= 0),
+  position  SMALLINT     NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS grade_components_term_idx ON grade_components (term_id, position);
+
+CREATE TABLE IF NOT EXISTS scores (
+  student_id   INT          NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  component_id INT          NOT NULL REFERENCES grade_components(id) ON DELETE CASCADE,
+  score        NUMERIC(5,2) NOT NULL CHECK (score >= 0 AND score <= 100),
+  updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  PRIMARY KEY (student_id, component_id)
+);
+
+-- Deskripsi capaian kompetensi per siswa per semester.
+CREATE TABLE IF NOT EXISTS report_notes (
+  student_id  INT         NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  term_id     INT         NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
+  description TEXT        NOT NULL DEFAULT '',
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (student_id, term_id)
+);
+
 -- Percobaan login gagal (pembatasan brute force).
 CREATE TABLE IF NOT EXISTS login_attempts (
   id         SERIAL PRIMARY KEY,

@@ -11,9 +11,25 @@ const g = globalThis as unknown as { __db?: GlobalDb };
 g.__db ??= {};
 const state = g.__db;
 
-// Neon (Vercel Marketplace) mengisi DATABASE_URL; beberapa integrasi lain memakai POSTGRES_URL.
+// Neon lewat Vercel bisa memberi nama variabel berbeda tergantung "Custom Prefix" saat Connect:
+// DATABASE_URL (tanpa prefix), STORAGE_URL (prefix bawaan "STORAGE"), POSTGRES_URL, atau <PREFIX>_URL lain.
+const PREFERRED_KEYS = ["DATABASE_URL", "POSTGRES_URL", "STORAGE_URL", "STORAGE_DATABASE_URL", "STORAGE_POSTGRES_URL"];
+const isPostgresUrl = (v: string | undefined): v is string => !!v && /^postgres(ql)?:\/\//i.test(v.trim());
+
 function connectionUrl(): string | undefined {
-  return process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  for (const key of PREFERRED_KEYS) {
+    const value = process.env[key];
+    if (isPostgresUrl(value)) return value.trim();
+  }
+  // Cadangan: variabel apa pun berakhiran _URL yang berisi alamat Postgres (koneksi pooled diutamakan).
+  const keys = Object.keys(process.env)
+    .filter((k) => k.endsWith("_URL") && !/UNPOOLED|NON_POOLING|NO_SSL/.test(k))
+    .sort();
+  for (const key of keys) {
+    const value = process.env[key];
+    if (isPostgresUrl(value)) return value.trim();
+  }
+  return undefined;
 }
 
 export function isDbConfigured(): boolean {
@@ -24,7 +40,7 @@ function getPool(): Pool {
   if (state.pool) return state.pool;
   const connectionString = connectionUrl();
   if (!connectionString) {
-    throw new Error("DATABASE_URL belum diatur. Hubungkan database di Vercel > Storage.");
+    throw new Error("Alamat database belum diatur. Isi DATABASE_URL di Vercel → Settings → Environment Variables.");
   }
   const pool = new Pool({ connectionString, max: 5, idleTimeoutMillis: 5_000 });
   // Menutup koneksi idle dengan benar saat fungsi Vercel di-suspend.
@@ -42,6 +58,26 @@ function ensureSchema(): Promise<void> {
       throw err;
     });
   return state.schemaReady;
+}
+
+export type TxQuery = <T = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<T[]>;
+
+/** Jalankan beberapa query dalam satu transaksi (semua berhasil, atau semua dibatalkan). */
+export async function transaction<R>(fn: (q: TxQuery) => Promise<R>): Promise<R> {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const q: TxQuery = async (text, params = []) => (await client.query(text, params)).rows;
+    const result = await fn(q);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function query<T = Record<string, unknown>>(

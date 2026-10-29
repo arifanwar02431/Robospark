@@ -25,8 +25,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 children
               ) : (
                 <Alert color="error" icon={DatabaseZap} title="Database belum terhubung">
-                  Environment variable <code className="font-mono">DATABASE_URL</code> belum diatur. Hubungkan database
-                  Neon lewat Vercel → Storage, lalu redeploy.
+                  Alamat database belum ditemukan. Di Vercel, buka Settings → Environment Variables dan pastikan ada{" "}
+                  <code className="font-mono">DATABASE_URL</code> (atau <code className="font-mono">STORAGE_URL</code>) berisi
+                  alamat Neon, lalu redeploy.
                 </Alert>
               )}
             </div>
