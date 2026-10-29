@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BookOpen, CalendarDays, CheckCircle2, Clock, MapPin, Send, TriangleAlert, User } from "lucide-react";
+import { BookOpen, CalendarDays, CheckCircle2, Clock, Gauge, MapPin, Send, TriangleAlert, User } from "lucide-react";
 import { DayTimeline, TaskCard, type TimelineItem } from "@/components/planner";
 import { Alert, Badge, Card, CardHeader, PageHeader, buttonClass, cn } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { toneFor } from "@/lib/colors";
-import { getStats, listEventsBetween, listLessons } from "@/lib/data";
+import { getDashboardData } from "@/lib/data";
 import {
   DAY_NAMES,
   addDays,
@@ -19,7 +19,8 @@ import {
   relativeDayLabel,
   todayJakarta,
 } from "@/lib/date";
-import { previewReminders } from "@/lib/reminders";
+import { previewFrom, sentKey } from "@/lib/reminders";
+import { regionInfo } from "@/lib/region";
 import { telegramStatus } from "@/lib/telegram";
 import type { EventItem, Lesson, ReminderPreview } from "@/lib/types";
 
@@ -122,14 +123,16 @@ export default async function DashboardPage() {
   const tomorrow = addDays(today, 1);
   const now = nowMinutesJakarta();
 
-  const [stats, lessons, events, remindersToday, remindersTomorrow] = await Promise.all([
-    getStats(today),
-    listLessons(true),
-    listEventsBetween(today, addDays(today, 60)),
-    previewReminders(today),
-    previewReminders(tomorrow),
-  ]);
+  // Satu query untuk seluruh dashboard (sebelumnya 9 query).
+  const data = await getDashboardData(today, addDays(today, 367));
+  const { lessons, events: allEvents } = data;
+  const sent = new Set(data.sent.map(sentKey));
+  const remindersToday = previewFrom(today, lessons, allEvents, sent);
+  const remindersTomorrow = previewFrom(tomorrow, lessons, allEvents, sent);
+  const events = allEvents.filter((e) => e.event_date <= addDays(today, 60));
+  const stats = { lessons: lessons.length, upcoming: allEvents.length, sent7: data.sent7 };
   const tg = telegramStatus();
+  const region = regionInfo();
   const todayItems = itemsFor(today, lessons, events);
   const tomorrowItems = itemsFor(tomorrow, lessons, events);
   const timeline: TimelineItem[] = todayItems.map((i) =>
@@ -155,6 +158,22 @@ export default async function DashboardPage() {
           </>
         }
       />
+
+      {region.mismatch && (
+        <Alert
+          color="warning"
+          icon={Gauge}
+          title="Admin lambat karena server dan database berjauhan"
+          action={
+            <Link href="/admin/pengaturan#kecepatan" className={buttonClass("secondary", "sm")}>
+              Cara memperbaiki
+            </Link>
+          }
+        >
+          Server website ada di {region.server.name}, sedangkan database di {region.database.name}. Pindahkan region server ke{" "}
+          {region.database.name} ({region.database.vercelCode}).
+        </Alert>
+      )}
 
       {!tg.ready && (
         <Alert

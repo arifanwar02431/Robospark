@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
-import { History } from "lucide-react";
+import { Suspense } from "react";
+import { Gauge, History } from "lucide-react";
 import { ChatIdFinder, TelegramActions } from "@/components/admin/telegram-panel";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { recentReminderLogs } from "@/lib/data";
+import { dbPing } from "@/lib/db";
+import { regionInfo } from "@/lib/region";
 import { formatDate, reminderLabel } from "@/lib/date";
 import { telegramStatus } from "@/lib/telegram";
 
-export const metadata: Metadata = { title: "Telegram" };
+export const metadata: Metadata = { title: "Pengaturan" };
 export const dynamic = "force-dynamic";
 
 function StatusRow({ label, ok, okText, badText, detail, mono }: { label: string; ok: boolean; okText: string; badText: string; detail?: string; mono?: boolean }) {
@@ -39,15 +42,90 @@ const STEPS = [
   </>,
 ];
 
+/** Diukur terpisah dan dialirkan (streaming) agar halaman tidak menunggu pengukuran. */
+async function PingResult({ measure }: { measure: Promise<number | null> }) {
+  const ping = await measure;
+  const speed = ping === null ? null : ping < 40 ? "Cepat" : ping < 120 ? "Sedang" : "Lambat";
+  return (
+    <>
+      <div>
+        <p className="text-sm font-medium text-gray-700">Waktu ke database</p>
+        <p className="text-sm text-gray-500 tabular-nums">{ping === null ? "Tidak terukur" : `${ping} ms per permintaan`}</p>
+      </div>
+      {speed && (
+        <Badge color={speed === "Cepat" ? "success" : speed === "Sedang" ? "warning" : "error"} dot>
+          {speed}
+        </Badge>
+      )}
+    </>
+  );
+}
+
+function PingFallback() {
+  return (
+    <div>
+      <p className="text-sm font-medium text-gray-700">Waktu ke database</p>
+      <p className="text-sm text-gray-400">Mengukur…</p>
+    </div>
+  );
+}
+
 export default async function SettingsPage() {
   await requireAdmin();
   const status = telegramStatus();
+  const measure = dbPing().catch(() => null); // mulai bersamaan dengan query riwayat
   const logs = await recentReminderLogs(20);
   const cronReady = Boolean(process.env.CRON_SECRET);
+  const region = regionInfo();
 
   return (
     <div className="flex flex-col gap-7">
-      <PageHeader title="Telegram" description="Hubungkan bot Telegram dan pantau pengingat yang sudah terkirim." />
+      <PageHeader title="Pengaturan" description="Hubungkan bot Telegram, pantau pengingat, dan periksa kecepatan server." />
+
+      <Card className={region.mismatch ? "ring-2 ring-warning-300" : undefined}>
+        <div id="kecepatan" className="scroll-mt-6" />
+        <CardHeader title="Kecepatan server" description="Admin paling cepat jika server website dan database berada di region yang sama." />
+        <div className="grid gap-x-8 px-5 sm:px-6 lg:grid-cols-3">
+          <div className="border-b border-gray-100 py-3.5 lg:border-0">
+            <p className="text-sm font-medium text-gray-700">Server website</p>
+            <p className="text-sm text-gray-500">
+              {region.server.name}
+              {region.server.code && <span className="font-mono"> ({region.server.code})</span>}
+            </p>
+          </div>
+          <div className="border-b border-gray-100 py-3.5 lg:border-0">
+            <p className="text-sm font-medium text-gray-700">Database</p>
+            <p className="text-sm text-gray-500">
+              {region.database.name}
+              {region.database.vercelCode && <span className="font-mono"> ({region.database.vercelCode})</span>}
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-3 py-3.5">
+            <Suspense fallback={<PingFallback />}>
+              <PingResult measure={measure} />
+            </Suspense>
+          </div>
+        </div>
+        {region.mismatch && region.database.vercelCode && (
+          <div className="mx-5 mb-5 flex gap-3 rounded-2xl bg-warning-50 p-4 text-sm text-gray-700 sm:mx-6">
+            <Gauge className="mt-0.5 size-5 shrink-0 text-warning-600" />
+            <div>
+              <p className="font-bold text-gray-900">Pindahkan server ke {region.database.name}</p>
+              <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+                <li>
+                  Di Vercel, buka project ini → <b>Settings → Functions</b>.
+                </li>
+                <li>
+                  Pada <b>Function Regions</b>, pilih <b>{region.database.name}</b> ({region.database.vercelCode}), lalu simpan.
+                </li>
+                <li>
+                  Buka <b>Deployments</b> → <b>⋯</b> → <b>Redeploy</b>.
+                </li>
+              </ol>
+            </div>
+          </div>
+        )}
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-2">

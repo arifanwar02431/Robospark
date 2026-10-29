@@ -6,7 +6,7 @@ import { StudentsManager } from "@/components/admin/students-manager";
 import { PageHeader, buttonClass } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { todayJakarta } from "@/lib/date";
-import { classCounts, knownSchoolYears, listStudents } from "@/lib/rapor";
+import { getStudentsPage } from "@/lib/rapor";
 import { CLASSES, buildHref, currentTerm, isValidSchoolYear, paramToYear, shiftYear } from "@/lib/rapor-shared";
 
 export const metadata: Metadata = { title: "Data Siswa" };
@@ -19,11 +19,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const schoolYear = isValidSchoolYear(paramToYear(sp.ta)) ? paramToYear(sp.ta) : now.schoolYear;
   const className = CLASSES.includes(sp.kelas ?? "") ? (sp.kelas as string) : "4A";
 
-  const [students, counts, known] = await Promise.all([
-    listStudents(schoolYear, className),
-    classCounts(schoolYear),
-    knownSchoolYears(),
-  ]);
+  const { students, counts, years: known } = await getStudentsPage(schoolYear, className);
   const years = [...new Set([shiftYear(now.schoolYear, 1), now.schoolYear, shiftYear(now.schoolYear, -1), ...known, schoolYear])].sort().reverse();
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 

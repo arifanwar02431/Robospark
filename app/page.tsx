@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { HeroFlowchart } from "@/components/hero-flowchart";
-import { ComingSoon, MateriCard, ProjectCard, RobotCard } from "@/components/portal-cards";
+import { ComingSoon, MateriRow, ProjectCard, RobotCard } from "@/components/portal-cards";
 import { PublicShell } from "@/components/site-chrome";
 import { buttonClass } from "@/components/ui";
-import { MATERI } from "@/content/materi";
+import { materiFor } from "@/content/materi";
 import { PROJECTS } from "@/content/project";
 import { ROBOTS } from "@/content/robot";
 import { SITE } from "@/lib/site";
@@ -24,8 +24,10 @@ function SectionHead({ title, text, href, linkLabel }: { title: string; text: st
 }
 
 export default function HomePage() {
-  const kelas4 = MATERI.filter((m) => m.kelas.includes(4)).length;
-  const kelas6 = MATERI.filter((m) => m.kelas.includes(6)).length;
+  const kelas = [
+    { k: 4 as const, items: materiFor(4) },
+    { k: 6 as const, items: materiFor(6) },
+  ];
 
   return (
     <PublicShell active="/">
@@ -46,9 +48,9 @@ export default function HomePage() {
           </div>
           <dl className="mt-12 flex gap-10 border-t border-gray-200/80 pt-6">
             {[
-              { n: MATERI.length, l: "materi interaktif" },
-              { n: kelas4, l: "untuk kelas 4" },
-              { n: kelas6, l: "untuk kelas 6" },
+              { n: kelas[0].items.length, l: "materi kelas 4" },
+              { n: kelas[1].items.length, l: "materi kelas 6" },
+              { n: 350, l: "soal latihan SAS" },
             ].map((s) => (
               <div key={s.l}>
                 <dt className="sr-only">{s.l}</dt>
@@ -67,13 +69,25 @@ export default function HomePage() {
       <section className="mx-auto max-w-[1200px] px-5 pb-24 sm:px-8" aria-labelledby="materi-title">
         <SectionHead
           title="Materi"
-          text="Setiap materi berisi penjelasan, latihan, game, dan kuis yang bisa langsung dikerjakan di browser."
+          text="Dipisah per kelas. Setiap materi berisi penjelasan, latihan, game, dan kuis yang bisa langsung dikerjakan di browser."
           href="/materi"
           linkLabel="Semua materi"
         />
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {MATERI.slice(0, 3).map((m) => (
-            <MateriCard key={m.slug} m={m} />
+        <div className="grid gap-5 lg:grid-cols-2">
+          {kelas.map(({ k, items }) => (
+            <div key={k} className="rounded-3xl bg-white/70 p-3 shadow-xs ring-1 ring-gray-200/80">
+              <div className="flex items-baseline justify-between px-3 pt-3 pb-2">
+                <h3 className="text-[22px] font-extrabold tracking-[-0.02em] text-gray-900">Kelas {k}</h3>
+                <Link href={`/materi#kelas-${k}`} className="text-sm font-bold text-brand-700 hover:text-brand-800">
+                  Detail <span className="sr-only">materi kelas {k}</span>
+                </Link>
+              </div>
+              <div className="flex flex-col">
+                {items.map((m) => (
+                  <MateriRow key={m.slug} m={m} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </section>

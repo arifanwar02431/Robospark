@@ -1,15 +1,14 @@
 import writeXlsxFile from "write-excel-file/node";
 import type { Row, SheetData } from "write-excel-file/node";
 import { getSession } from "@/lib/auth";
-import { getGradeSheet, getTerm, listComponents } from "@/lib/rapor";
+import { getExportData, type GradeSheet } from "@/lib/rapor";
 import { CLASSES, computeFinal, type GradeComponent, type Term } from "@/lib/rapor-shared";
 
 export const dynamic = "force-dynamic";
 
 const HEADER_BG = "#FFE7D4";
 
-async function sheetFor(term: Term, className: string, components: GradeComponent[]): Promise<SheetData | null> {
-  const sheet = await getGradeSheet(term, className, components);
+function sheetFor(term: Term, className: string, components: GradeComponent[], sheet: GradeSheet): SheetData | null {
   if (sheet.students.length === 0) return null;
   const weights = components.map((c) => c.weight);
   const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
@@ -60,15 +59,16 @@ export async function GET(request: Request) {
   if (!Number.isInteger(termId) || termId <= 0 || (kelas !== "semua" && !CLASSES.includes(kelas))) {
     return new Response("Parameter tidak valid", { status: 400 });
   }
-  const term = await getTerm(termId);
-  if (!term) return new Response("Semester tidak ditemukan", { status: 404 });
-  const components = await listComponents(term.id);
+  const data = await getExportData(termId);
+  if (!data) return new Response("Semester tidak ditemukan", { status: 404 });
+  const { term, components } = data;
 
   const classes = kelas === "semua" ? CLASSES : [kelas];
   const sheets: { sheet: string; data: SheetData; columns: { width: number }[]; stickyRowsCount: number }[] = [];
   for (const c of classes) {
-    const data = await sheetFor(term, c, components);
-    if (data) sheets.push({ sheet: c, data, columns: columnsFor(components), stickyRowsCount: 4 });
+    const sheet = { students: data.students.filter((s) => s.class_name === c), scores: data.scores, notes: data.notes };
+    const rows = sheetFor(term, c, components, sheet);
+    if (rows) sheets.push({ sheet: c, data: rows, columns: columnsFor(components), stickyRowsCount: 4 });
   }
   if (sheets.length === 0) {
     sheets.push({

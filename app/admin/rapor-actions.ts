@@ -111,16 +111,14 @@ export async function saveGradesAction(
   termId: number,
   className: string,
   input: z.input<typeof gradesSchema>,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ savedAt: number }>> {
   if (!(await getSession())) return UNAUTHORIZED;
   if (!validId(termId) || !CLASSES.includes(className)) return { ok: false, error: "Data tidak valid." };
   const parsed = gradesSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid." };
   try {
-    const term = await rapor.getTerm(termId);
-    if (!term) return { ok: false, error: "Semester tidak ditemukan." };
     await rapor.saveGrades(
-      term,
+      termId,
       className,
       parsed.data.scores.map((s) => ({ ...s, score: s.score === null ? null : Math.round(s.score * 100) / 100 })),
       parsed.data.notes.map((n) => ({ ...n, description: n.description.trim() })),
@@ -128,8 +126,9 @@ export async function saveGradesAction(
   } catch (err) {
     return { ok: false, error: msg(err) };
   }
-  refresh();
-  return { ok: true, message: "Nilai tersimpan." };
+  // Sengaja TIDAK memanggil revalidatePath: tabel di browser sudah memegang data terbaru,
+  // jadi simpan otomatis tidak perlu memuat ulang seluruh halaman di server.
+  return { ok: true, message: "Nilai tersimpan.", data: { savedAt: Date.now() } };
 }
 
 const componentsSchema = z.object({
