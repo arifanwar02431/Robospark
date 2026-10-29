@@ -5,7 +5,8 @@ Portal pribadi dengan halaman publik (**Beranda**, **Materi**, **Robot**, **Proj
 **Halaman publik**
 
 - **Beranda** — alur belajar digambar sebagai flowchart (Flowchart → Variabel → Percabangan → Perulangan → Sumatif); setiap bentuk membuka materinya.
-- **Materi** — kartu materi interaktif dengan filter Kelas 4 / Kelas 6.
+- **Materi** — dipisah per kelas (bagian **Kelas 4** dan **Kelas 6**). Materi yang dipakai dua kelas tetap tampil di masing-masing kelas dengan ringkasan sesuai jenjangnya, walau link-nya sama.
+- **Ruang Koding** (`/ruang-koding`) — rangkuman materi, kisi-kisi, dan latihan soal SAS (175 soal per kelas). Kartu Kelas 4 langsung membuka bagian kelas 4 (`#k4-materi`), kartu Kelas 6 membuka bagian kelas 6 (`#k6-materi`).
 - **Robot** & **Project** — galeri dengan halaman detail (foto, deskripsi, video YouTube, komponen, tautan).
 
 **Fitur admin**
@@ -17,7 +18,7 @@ Portal pribadi dengan halaman publik (**Beranda**, **Materi**, **Robot**, **Proj
 - **Jadwal Kegiatan** (tanggal tertentu) — tambah, edit, hapus, tab Mendatang / Sudah lewat.
 - **Pengingat Telegram otomatis** — setiap jadwal bisa punya beberapa pengingat (Hari-H, H-1, H-3, H-7, atau H-berapa pun yang Anda ketik). Dikirim setiap pagi ± 06.00 WIB lewat Vercel Cron.
 - **Dashboard** — jadwal hari ini, antrean pengingat hari ini & besok, kegiatan terdekat.
-- **Pengaturan Telegram** — status koneksi, kirim pesan tes, jalankan pengingat manual, cari Chat ID, riwayat pengingat.
+- **Pengaturan** — status Telegram, kirim pesan tes, jalankan pengingat manual, cari Chat ID, riwayat pengingat, dan **kecepatan server** (region server vs region database + waktu ke database).
 
 **Tema** bergaya *planner* yang hangat: latar putih dengan cahaya peach, aksen oranye, tombol bulat, font **Plus Jakarta Sans**, papan jadwal per hari, dan kalender jam-per-jam. Setiap mata pelajaran/kegiatan otomatis mendapat warnanya sendiri. Semua token warna ada di `app/globals.css`, warna blok jadwal di `lib/colors.ts`.
 
@@ -61,7 +62,7 @@ Membuat string acak: jalankan `openssl rand -base64 48` di terminal, atau buka [
 
 1. Di Telegram buka **@BotFather** → kirim `/newbot` → ikuti petunjuk → salin **token** ke `TELEGRAM_BOT_TOKEN` → redeploy.
 2. Buka bot Anda dan kirim **/start**.
-3. Di website: **Admin → Pengaturan Telegram → Cari Chat ID** → salin angkanya ke `TELEGRAM_CHAT_ID` → redeploy.
+3. Di website: **Admin → Pengaturan → Cari Chat ID** → salin angkanya ke `TELEGRAM_CHAT_ID` → redeploy.
 4. Klik **Kirim pesan tes**. Jika pesan masuk, pengingat otomatis sudah siap.
 
 ## Cara kerja pengingat
@@ -73,6 +74,16 @@ Membuat string acak: jalankan `openssl rand -base64 48` di terminal, atau buka [
 - Nonaktifkan pelajaran (mis. saat libur) untuk menghentikan pengingatnya tanpa menghapus jadwal.
 
 **Mengubah jam kirim:** ubah `schedule` di `vercel.json` (format UTC, jam WIB dikurangi 7). Contoh 05.00 WIB → `0 22 * * *`, 19.00 WIB → `0 12 * * *`. Commit & push, Vercel akan memperbaruinya.
+
+## Admin terasa lambat? Samakan region
+
+Setiap halaman admin membaca database. Jika server website (Vercel Functions) dan database (Neon) berada di negara berbeda, setiap permintaan bolak-balik antarbenua dan admin terasa lambat.
+
+1. Buka **Admin → Pengaturan → Kecepatan server**. Di sana tampil region server, region database, dan waktu ke database (Cepat < 40 ms, Sedang < 120 ms, Lambat ≥ 120 ms).
+2. Jika regionnya berbeda (dashboard juga menampilkan peringatan), buka Vercel → project → **Settings → Functions → Function Regions**, pilih region yang sama dengan database (mis. Neon `ap-southeast-1` = Vercel **Singapore, sin1**), lalu simpan.
+3. **Deployments → ⋯ → Redeploy**.
+
+Kode admin sendiri sudah dioptimalkan: setiap halaman cukup satu kali bolak-balik ke database, simpan nilai otomatis cukup satu perintah, koneksi database dipertahankan lebih lama, dan tampilan "memuat" muncul seketika saat berpindah menu.
 
 ## Keamanan
 
@@ -100,7 +111,8 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/remi
 
 Isi halaman publik ada di folder `content/`:
 
-- `content/materi.ts` — daftar materi (judul, topik, kelas, link, ringkasan, aktivitas).
+- `content/materi.ts` — daftar materi per kelas (judul, topik, link, ringkasan, aktivitas, petunjuk). Materi untuk dua kelas ditulis dua kali, satu blok untuk tiap kelas.
+- `public/ruang-koding/` — situs Ruang Koding. Untuk memperbarui soal atau materinya, ganti file di `data/` (`materi4.js`, `materi6.js`, `latihan4.js`, `latihan6.js`) dan gambar di `img/`.
 - `content/robot.ts` — galeri robot. Foto taruh di `public/robot/`, lalu tulis `image: "/robot/nama-file.jpg"`.
 - `content/project.ts` — daftar project. Gambar taruh di `public/project/`.
 
@@ -124,8 +136,9 @@ app/
   login/                   Halaman & aksi login
   admin/                   Dashboard, pelajaran, kegiatan, nilai, siswa, Telegram + server actions
   admin/nilai/export/      Unduh nilai ke Excel
-content/                   Isi Materi, Robot, Project (ubah di sini)
   api/cron/reminder/       Endpoint yang dipanggil Vercel Cron
+content/                   Isi Materi, Robot, Project (ubah di sini)
+public/ruang-koding/       Situs statis Ruang Koding (materi, kisi-kisi, latihan SAS)
 components/                Komponen UI (tombol, kartu jadwal, kalender, modal)
 lib/
   db.ts, schema.ts         Koneksi Postgres & skema tabel (dibuat otomatis)
@@ -133,6 +146,7 @@ lib/
   reminders.ts             Logika pengingat H-n
   rapor.ts, rapor-shared.ts  Data siswa, komponen, nilai & perhitungan nilai akhir
   telegram.ts              Kirim pesan Telegram
+  region.ts                Deteksi region server & database (kartu Kecepatan server)
   site.ts                  Nama & tagline website (ubah di sini)
 proxy.ts                   Proteksi /admin (Next.js 16)
 vercel.json                Jadwal cron
